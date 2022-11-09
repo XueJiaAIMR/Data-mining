@@ -1,96 +1,135 @@
+
 from pymatgen.ext.matproj import MPRester
+
+#from mp_api.client import MPRester
+from tqdm.autonotebook import tqdm
 import numpy as np
 import pandas as pd
-m = MPRester("")
-from pymatgen import MPRester
+import pymatgen.analysis.phase_diagram as phase_diagram
+import pymatgen.analysis.pourbaix_diagram as pbx
+from pymatgen.core import Composition
+from pymatgen.entries.computed_entries import ComputedStructureEntry
+#from pymatgen.ext.matproj import MPRester
+mp = MPRester("3dnw2ydc8xpTaFbbahx")
+#m = MPRester("u8YpDzvIjsiP9DaUqadlzniQFbUrCmQ6")
 import time
 from pymatgen.analysis.pourbaix_diagram import PourbaixDiagram,ELEMENTS_HO, PourbaixPlotter
-data = []
-for i in range(2,6):
-    criteria={"elements":{"$in": ["O"],
-                            "$nin": ["Ac","Th","Pa","U","Np","Pu","Am","Cm","Bk","Cf","Es","Fm","Md","No","Lr","As".
-                              "Pm","Rf","Db","Sg","Tc","Bh","Hs","Mt","Ds","Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og","Po",
-                                   "At","Rn","F","Cl","Br","I","At","B","C","N","H","He","Ne","Ar","Kr","Xe","Tc"."P"]},
-                 'nelements':i}
-    
 
-    properties = ["material_id","nelements","nsites","icsd_ids","pretty_formula","formula","energy","energy_per_atom","spacegroup.symbol",
-              "spacegroup.number","spacegroup.point_group","spacegroup.crystal_system","band_gap","structure.lattice.a","density","cif",
-              "structure.lattice.b","structure.lattice.c","volume","efermi","formation_energy_per_atom",
-              "e_above_hull",'has']
-    data1 = m.query(criteria, properties)
-    data1 = np.array(data1) 
-    data.extend(data1)
-    
-data_pd = pd.DataFrame(data)
-    
-data_Ehull_pd = data_pd
-formation_energy = []
-data_success = []
-data_error = []
+def Query(m, n,in_ele, nin_ele):
+    data = []
+    for i in range(m, n):  # 2和6分别代表组成化合物的元素数目
+        criteria = {"elements": {"$in": in_ele,\
+                                 "$nin": nin_ele},'nelements': i}
 
-for m_id in range(0,len(data_Ehull_pd)):#len(data_pd)
-    print(m_id)
-    data_m_id = data_Ehull_pd.iloc[m_id]
-    material_id = data_m_id['material_id']
-    try:
-        doc = mpr.thermo.get_data_by_id(material_id)
-        E_for_ene = doc.formation_energy_per_atom
-        formation_energy.append(E_for_ene)
-        data_success.append(data_m_id)
-    except:
-        data_error.append(data_m_id)  
-pd.DataFrame(data_success).to_excel('D:\\筛选材料\\氧化物\\PH=0\\Eforn_updata_6325.xlsx',index=None)
-pd.DataFrame(formation_energy).to_excel('D:\\筛选材料\\氧化物\\PH=0\\formation_energy_6325.xlsx',index=None)
+        properties = ["material_id", "nelements", "nsites", "icsd_ids", "pretty_formula", "formula", "energy",\
+                      "energy_per_atom", "spacegroup.symbol",\
+                      "spacegroup.number", "spacegroup.point_group", "spacegroup.crystal_system", "band_gap",\
+                      "structure.lattice.a", "density", "cif",\
+                      "structure.lattice.b", "structure.lattice.c", "volume", "efermi",\
+                      "e_above_hull", 'has']
+        data1 = mp.query(criteria, properties)
+        data1 = np.array(data1)
+        data.extend(data1)
+    data_pd = pd.DataFrame(data)
+    data_ehull_0 = data_pd.loc[data_pd["e_above_hull"].isin([0])]
+    data_ehull_0 = data_ehull_0.reset_index(drop=True)
+    return data_pd,data_ehull_0
 
-data_foration_pd = pd.read_excel('D:\\筛选材料\\氧化物\\PH=0\\\Eform_6325_done.xlsx',header = 0) #提取数据
-data_foration_pd.head()
-from matminer.featurizers.conversions import StrToComposition
-data_pd_str = StrToComposition().featurize_dataframe(data_foration_pd, "pretty_formula",ignore_errors=True)
-ele = []
-compound_pd = data_pd_str['composition']
-compound_np = np.array(compound_pd)
-for i in range(0,len(compound_np)):
-    print(i)
-    compound_i = compound_np[i]
-    compound_i_list = list(compound_i)
-    elements = []
-    ele_num  = len(compound_i_list)
-    for j in range(ele_num):
-        #element_list = compound_i_list[j]
-        element_j = str(compound_i_list[j])
-        elements.append(element_j)
-    ele.append(elements)
-    
-duplicate_all = []
-duplicate_stable = []
-for i in range(0,len(ele)):
-    print(i)
-    if i in duplicate_all:
-        a=1
-    else:
-        duplicate_i = []
-        com_1 = ele[i]
-        for j in range(i+1, len(ele)):
-            com_2 = ele[j]
-            if com_1 == com_2:
-                duplicate_i.append(i)
-                duplicate_i.append(j)
-            else:
-                j = j+1
-        
-        duplicate_all.extend(duplicate_i)
+def getMPResterNew(data_ehull_0):
+    from mp_api.client import MPRester as MPResterNew
+    mpr = MPResterNew("u8YpDzvIjsiP9DaUqadlzniQFbUrCmQ6")
+    formation_energy = []
+    data_success = []
+    data_error = []
 
-        if duplicate_i == None:
-            print(stable)
+    for m_id in range(0, len(data_ehull_0)):  # len(data_pd)
+        #print(m_id)
+        data_m_id = data_ehull_0.iloc[m_id]
+        material_id = data_m_id['material_id']
+        try:
+            doc = mpr.thermo.get_data_by_id(material_id)
+            E_for_ene = doc.formation_energy_per_atom
+            formation_energy.append(E_for_ene)
+            data_success.append(data_m_id)
+        except:
+            data_error.append(data_m_id)
+    formation_pd = pd.DataFrame(formation_energy, columns=['formation_energy_per_atom'])
+    data_formation_pd = pd.concat([pd.DataFrame(data_success),formation_pd],axis = 1)
+    return data_formation_pd
+
+def composition_elements(data_formation_pd):
+    from matminer.featurizers.conversions import StrToComposition
+    data_pd_str = StrToComposition().featurize_dataframe(data_formation_pd, "pretty_formula",ignore_errors=True)
+    ele = []
+    compound_pd = data_pd_str['composition']
+    compound_np = np.array(compound_pd)
+    for i in range(0,len(compound_np)):
+        #print(i)
+        compound_i = compound_np[i]
+        compound_i_list = list(compound_i)
+        elements = []
+        ele_num  = len(compound_i_list)
+        for j in range(ele_num):
+            #element_list = compound_i_list[j]
+            element_j = str(compound_i_list[j])
+            elements.append(element_j)
+        ele.append(elements)
+    return ele
+
+
+def low_formation_energy(ele,data_formation_pd):
+    ele_shape = len(ele)
+    stable_crystal_structure = []
+    for i in range(0,len(data_formation_pd)):
+        print(i)
+        if i in duplicate_all:
+            continue
         else:
-            formation_i = data_foration_pd.iloc[duplicate_i]
-            formation_same = formation_i['formation_energy_per_atom']
-            for_argmax = formation_same[formation_same == formation_same.min()].index
-            duplicate_stable.extend(for_argmax)
-            
-stable_ubstable_all = data_foration_pd.iloc[duplicate_all]
-df_without_duplicates = stable_ubstable_all.drop_duplicates()
-stable = data_foration_pd.iloc[duplicate_stable]
-diff=pd.concat([df_without_duplicates,stable,stable]).drop_duplicates(keep=False)
-crystal_structure = pd.concat([data_foration_pd,diff,diff]).drop_duplicates(keep=False)
+            duplicate_i = []
+            com_1 = ele[i]
+            for j in range(i+1, ele_shape):
+                com_2 = ele[j]
+                if com_1 == com_2:
+                    duplicate_i.append(i)
+                    duplicate_i.append(j)
+                else:
+                    continue
+
+            if duplicate_i == None:
+                formation_i = data_formation_pd.iloc[i]
+                stable_crystal_structure.append(formation_i)
+
+            else:
+                duplicate_i.append(i)
+                formation_i = data_formation_pd.iloc[duplicate_i]
+                formation_same = formation_i['formation_energy_per_atom']
+                for_argmax = formation_same[formation_same == formation_same.min()].index
+                formation_i1 = data_formation_pd.iloc[for_argmax]
+                stable_crystal_structure.append(formation_i1)
+    stable_crystal_structure_pd = pd.DataFrame(stable_crystal_structure)
+    return stable_crystal_structure_pd
+
+
+
+if __name__ == "__main__":
+    in_ele = ["O"]
+    nin_ele = ["Ac","Th","Pa","U","Np","Pu","Am","Cm","Bk","Cf","Es","Fm","Md","No","Lr","As",
+                              "Pm","Rf","Db","Sg","Tc","Bh","Hs","Mt","Ds","Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og","Po",
+                                   "At","Rn","F","Cl","Br","I","At","B","H","He","Ne","Ar","Kr","Xe","Tc","P","Si"
+                                    ,"Fr","Ra","Se","S","P","At","Rn","F","Cl","Br","I","At","B","H","He",
+                                     "Ne","Ar","Kr","Xe","Tc","Tl","La","Ce","Pr","Nd","Pm","Sm","Eu","Gd","Tb","Dy","Ho",
+                                     "Er","Tm","Yb","Lu","P","As","Te","Si"]
+    data_pd,data_ehull_0 =  Query(2, 6,in_ele,nin_ele)
+    data_formation_pd = getMPResterNew(data_ehull_0)
+    ele = composition_elements(data_formation_pd)
+    stable_crystal_structure_pd = low_formation_energy(ele,data_formation_pd)
+
+
+    data_pd.to_excel('compounds.xlsx', index=None)
+    data_ehull_0.to_excel('data_ehull_0.xlsx', index=None)
+    stable_crystal_structure_pd.to_excel('formation_energy.xlsx',index=None)
+
+
+
+
+
